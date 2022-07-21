@@ -1,0 +1,23 @@
+version: "3"
+
+services:
+
+  app:
+    container_name: acourse_course_service_app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 8082:${APP_PORT}
+    restart: on-failure
+    volumes:
+      - app_acourse_course_service_vol
+    networks:
+      - default
+
+volumes:
+  app_acourse_course_service_vol:
+
+networks:
+  default:
+    driver: bridge
