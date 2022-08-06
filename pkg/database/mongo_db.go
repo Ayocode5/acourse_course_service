@@ -36,6 +36,7 @@ func (db *Database) Prepare() contracts.MongoDBContract {
 			log.Fatal(err)
 		}
 
+		log.Println("PINGING: MongoDB")
 		err = client.Ping(context.Background(), nil)
 		if err != nil {
 			panic(err)

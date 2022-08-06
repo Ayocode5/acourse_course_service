@@ -5,6 +5,7 @@ import (
 	"acourse-course-service/pkg/models"
 	"context"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -60,14 +61,26 @@ func (d DatabaseRepository) Fetch() (res []models.Course, err error) {
 func (d DatabaseRepository) FetchById(id string) (res models.Course, err error) {
 
 	var result models.Course
-	err = d.Collection.FindOne(ctx, bson.D{{"name", id}}).Decode(&result)
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return result, err
+	}
+	err = d.Collection.FindOne(ctx, bson.D{{"_id", objectID}}).Decode(&result)
 	if err != nil {
 		return result, err
 	}
 	return result, nil
 }
 
-func (d DatabaseRepository) Create() (res models.Course, err error) {
-	//TODO implement me
-	panic("implement me")
+func (d DatabaseRepository) Create(data models.Course) (string_id string, err error) {
+
+	course, err := d.Collection.InsertOne(ctx, data)
+	if err != nil {
+		return "", err
+	}
+	return course.InsertedID.(primitive.ObjectID).Hex(), nil
+}
+
+func (d DatabaseRepository) Update() {
+
 }
