@@ -3,12 +3,13 @@ package controllers
 import (
 	"acourse-course-service/pkg/contracts"
 	"acourse-course-service/pkg/http/middleware"
+	"context"
 	"github.com/gin-gonic/gin"
 )
 
-func SetupCourseHandler(router *gin.Engine, courseService contracts.CourseService) {
+func SetupCourseHandler(ctx context.Context, router *gin.Engine, courseService contracts.CourseService) {
 
-	handler := &CourseHanlder{CourseService: courseService}
+	handler := &CourseHanlder{CourseService: courseService, Context: ctx}
 
 	r := router.Group("/course/")
 	r.Use(middleware.AuthorizeRequestMiddleware)

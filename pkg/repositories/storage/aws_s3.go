@@ -57,6 +57,8 @@ func ConstructS3Repository(accessKeyId string, secretAccessKey string, bucketNam
 
 func (s S3BucketService) GetClient() (*s3.S3, error) {
 
+	var client *s3.S3
+
 	credential := credentials.NewStaticCredentials(s.accessKeyID, s.secretAccessKey, "")
 	_, err := credential.Get()
 	if err != nil {
@@ -69,7 +71,12 @@ func (s S3BucketService) GetClient() (*s3.S3, error) {
 		return nil, err
 	}
 
-	return s3.New(newSession, cfg), nil
+	if client == nil {
+		return s3.New(newSession, cfg), nil
+	}
+
+	return client, nil
+
 }
 
 //Read file bytes From multipart request
@@ -156,7 +163,7 @@ func (s S3BucketService) uploadPart(S3 *s3.S3, resp *s3.CreateMultipartUploadOut
 			fmt.Printf("Retrying to upload part #%v\n", partNumber)
 			try++
 		} else {
-			//fmt.Printf("Upload part #%v\n", partNumber)
+			//fmt.Printf("UploadMultiFile part #%v\n", partNumber)
 			completed := &s3.CompletedPart{
 				ETag:       uploadPartOutput.ETag,
 				PartNumber: aws.Int64(int64(partNumber)),
@@ -181,7 +188,7 @@ func (s S3BucketService) abortMultiPartUpload(S3 *s3.S3, resp *s3.CreateMultipar
 	return err
 }
 
-func (s S3BucketService) Upload(files []*multipart.FileHeader, prefix string) ([]response.S3Response, error) {
+func (s S3BucketService) UploadMultiFile(files []*multipart.FileHeader, prefix string) ([]response.S3Response, error) {
 
 	//var form Form
 	//_ = c.ShouldBind(&form)
@@ -276,7 +283,7 @@ func (s S3BucketService) Upload(files []*multipart.FileHeader, prefix string) ([
 
 			fmt.Println("Created multipart upload request")
 
-			//10. Upload Multipart
+			//10. UploadMultiFile Multipart
 			var current, partLength int64
 			var remaining = filePart.Size
 			var completedParts []*s3.CompletedPart
@@ -290,7 +297,7 @@ func (s S3BucketService) Upload(files []*multipart.FileHeader, prefix string) ([
 					partLength = s.maxPartSize
 				}
 
-				//Upload Binaries File
+				//UploadMultiFile Binaries File
 				completedPart, err := s.uploadPart(s3Client, createdMultipartOutput, filebytes[current:current+partLength], partNumber)
 
 				if err != nil {
@@ -370,4 +377,31 @@ func (s S3BucketService) Upload(files []*multipart.FileHeader, prefix string) ([
 
 	return finalResult, nil
 
+}
+
+func (s S3BucketService) DeleteObject(objectKey *string) error {
+
+	client, err := s.GetClient()
+	if err != nil {
+		return err
+	}
+
+	_, err = client.DeleteObject(&s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    objectKey,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	err = client.WaitUntilObjectNotExists(&s3.HeadObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    objectKey,
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

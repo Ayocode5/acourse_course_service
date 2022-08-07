@@ -9,8 +9,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var ctx = context.Background()
-
 type DatabaseRepository struct {
 	Connection *mongo.Database
 	Collection *mongo.Collection
@@ -24,7 +22,7 @@ func ConstructDBRepository(conn *mongo.Database, coll *mongo.Collection) contrac
 	}
 }
 
-func (d DatabaseRepository) Fetch() (res []models.Course, err error) {
+func (d DatabaseRepository) Fetch(ctx context.Context) (res []models.Course, err error) {
 
 	//Fetch Connection
 	records, err := d.Collection.Find(ctx, bson.M{})
@@ -58,7 +56,7 @@ func (d DatabaseRepository) Fetch() (res []models.Course, err error) {
 	return results, nil
 }
 
-func (d DatabaseRepository) FetchById(id string) (res models.Course, err error) {
+func (d DatabaseRepository) FetchById(ctx context.Context, id string) (res models.Course, err error) {
 
 	var result models.Course
 	objectID, err := primitive.ObjectIDFromHex(id)
@@ -72,15 +70,53 @@ func (d DatabaseRepository) FetchById(id string) (res models.Course, err error) 
 	return result, nil
 }
 
-func (d DatabaseRepository) Create(data models.Course) (string_id string, err error) {
+func (d DatabaseRepository) Create(ctx context.Context, data models.Course) (string_id string, err error) {
 
-	course, err := d.Collection.InsertOne(ctx, data)
+	var course_id string
+
+	//	Use Transaction
+	err = d.Connection.Client().UseSession(ctx, func(sessionContext mongo.SessionContext) error {
+		// Start Transaction
+		err := sessionContext.StartTransaction()
+		if err != nil {
+			return err
+		}
+
+		// Insert Data To the Database & abort if it fails
+		insertedData, err := d.Collection.InsertOne(ctx, data)
+		if err != nil {
+			sessionContext.AbortTransaction(ctx)
+			return err
+		}
+
+		course_id = insertedData.InsertedID.(primitive.ObjectID).Hex()
+
+		// Commit Data if no error
+		err = sessionContext.CommitTransaction(ctx)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
 		return "", err
 	}
-	return course.InsertedID.(primitive.ObjectID).Hex(), nil
+
+	return course_id, nil
 }
 
-func (d DatabaseRepository) Update() {
+func (d DatabaseRepository) Update(ctx context.Context, data models.Course, id string) (res bool, err error) {
 
+	objectId, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return false, err
+	}
+	filter := bson.D{{"_id", objectId}}
+	_, err = d.Collection.UpdateOne(ctx, filter, bson.D{{"$set", data}})
+	if err != nil {
+		return false, err
+	}
+	return true, err
 }

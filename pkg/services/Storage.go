@@ -10,9 +10,17 @@ type StorageService struct {
 	StorageRepository contracts.StorageRepository
 }
 
+func (s StorageService) Delete(objectKey string) error {
+	err := s.StorageRepository.DeleteObject(&objectKey)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s StorageService) Upload(files []*multipart.FileHeader, prefix string) ([]response.S3Response, error) {
 
-	res, err := s.StorageRepository.Upload(files, prefix)
+	res, err := s.StorageRepository.UploadMultiFile(files, prefix)
 	if err != nil {
 		return nil, err
 	}

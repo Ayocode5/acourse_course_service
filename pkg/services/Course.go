@@ -5,7 +5,7 @@ import (
 	"acourse-course-service/pkg/http/requests"
 	"acourse-course-service/pkg/http/response"
 	"acourse-course-service/pkg/models"
-	"errors"
+	"context"
 	"math/rand"
 	"regexp"
 	"strconv"
@@ -30,21 +30,20 @@ func ConstructCourseService(
 	}
 }
 
-func (c CourseService) Fetch() ([]models.Course, error) {
-	return c.DBRepository.Fetch()
+func (c CourseService) Fetch(ctx context.Context) ([]models.Course, error) {
+	return c.DBRepository.Fetch(ctx)
 }
 
-func (c CourseService) FetchById(id string) (models.Course, error) {
-	return c.DBRepository.FetchById(id)
+func (c CourseService) FetchById(ctx context.Context, id string) (models.Course, error) {
+	return c.DBRepository.FetchById(ctx, id)
 }
 
-func (c CourseService) Create(data requests.CreateCourseRequest) (interface{}, error) {
+func (c CourseService) Create(ctx context.Context, data requests.CreateCourseRequest) (interface{}, error) {
 
-	material_length := len(data.Materials)
-	material_files_length := len(data.Files)
-
-	if material_length != material_files_length {
-		return nil, errors.New("Total Material Data and Material Files is not match")
+	//0. Validate Total Material & Files, if it's not match then return error
+	validationErr := data.ValidateMaterialFiles()
+	if validationErr != nil {
+		return nil, validationErr
 	}
 
 	//1. Construct Course Model
@@ -65,7 +64,7 @@ func (c CourseService) Create(data requests.CreateCourseRequest) (interface{}, e
 		course.ReleasedAt = &timeNow
 	}
 
-	//2. Upload Video to AWS S3 Bucket
+	//2. UploadMultiFile Video to AWS S3 Bucket
 	var uploadedMaterialVideo []response.S3Response
 
 	var err error
@@ -131,12 +130,33 @@ func (c CourseService) Create(data requests.CreateCourseRequest) (interface{}, e
 	course.TotalDuration = time.Duration(total_duration)
 
 	//5. Save Course Model to Database
-	course_id, err := c.DBRepository.Create(course)
+	courseId, err := c.DBRepository.Create(ctx, course)
 	if err != nil {
 		return models.Course{}, err
 	}
 
-	course.ID = course_id
+	course.ID = courseId
 
 	return course, nil
+}
+
+func (c CourseService) Update(ctx context.Context, data requests.UpdateCourseRequest, courseId string) (bool, error) {
+
+	var course models.Course
+
+	course, err := c.DBRepository.FetchById(ctx, courseId)
+	if err != nil {
+		return false, err
+	}
+
+	timeNow := time.Now()
+	course.Name = data.Name
+	course.UpdatedAt = &timeNow
+
+	_, err = c.DBRepository.Update(ctx, course, courseId)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }

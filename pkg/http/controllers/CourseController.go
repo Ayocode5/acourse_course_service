@@ -3,6 +3,7 @@ package controllers
 import (
 	"acourse-course-service/pkg/contracts"
 	"acourse-course-service/pkg/http/requests"
+	"context"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
 	"net/http"
@@ -10,10 +11,11 @@ import (
 
 type CourseHanlder struct {
 	CourseService contracts.CourseService
+	Context       context.Context
 }
 
 func (hanlder *CourseHanlder) ListCourse(c *gin.Context) {
-	courses, err := hanlder.CourseService.Fetch()
+	courses, err := hanlder.CourseService.Fetch(hanlder.Context)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -23,7 +25,7 @@ func (hanlder *CourseHanlder) ListCourse(c *gin.Context) {
 
 func (handler *CourseHanlder) FindCourse(c *gin.Context) {
 
-	course, err := handler.CourseService.FetchById(c.Param("id"))
+	course, err := handler.CourseService.FetchById(handler.Context, c.Param("id"))
 
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -52,7 +54,7 @@ func (handler *CourseHanlder) CreateCourse(c *gin.Context) {
 		return
 	}
 
-	res, err := handler.CourseService.Create(createCourseRequest)
+	res, err := handler.CourseService.Create(handler.Context, createCourseRequest)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

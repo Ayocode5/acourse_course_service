@@ -6,6 +6,7 @@ import (
 	dbrepo "acourse-course-service/pkg/repositories/database"
 	s3repo "acourse-course-service/pkg/repositories/storage"
 	"acourse-course-service/pkg/services"
+	"context"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"os"
@@ -14,6 +15,8 @@ import (
 import "github.com/zhulik/go_mediainfo"
 
 func main() {
+
+	var ctx = context.Background()
 
 	//Load .Env
 	err := godotenv.Load(".env")
@@ -39,12 +42,12 @@ func main() {
 
 	//Setup S3 Storage Repository
 	s3StorageRepository := s3repo.ConstructS3Repository(
-		"AKIA2UG6E7BNH4BCHPD3",
-		"3otZOFOcuQBB2xLnDp/T7LSDFu2Ko/qJU4Lx8QPJ",
-		"acourse-course-videos",
-		"ap-southeast-1",
+		os.Getenv("AWS_ACCESS_KEY_ID"),
+		os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		os.Getenv("AWS_BUCKET_NAME"),
+		os.Getenv("AWS_BUCKET_REGION"),
 		[]string{"video/mp4", "video/x-matroska", "image/jpeg"},
-		int64(100*1024*1024),
+		int64(100*1024*1024), //MAX Filesize 100mb
 		3,
 	)
 
@@ -58,7 +61,7 @@ func main() {
 	courseService := services.ConstructCourseService(&dbRepository, &storageService, &mediaInfoService)
 
 	//Setup Course Devlivery/Http Controller
-	controllers.SetupCourseHandler(engine, courseService)
+	controllers.SetupCourseHandler(ctx, engine, courseService)
 
 	//Running App With Desired Port
 	if port := os.Getenv("APP_PORT"); port == "" {

@@ -7,10 +7,12 @@ import (
 )
 
 type StorageRepository interface {
-	Upload(files []*multipart.FileHeader, prefix string) ([]response.S3Response, error)
+	UploadMultiFile(files []*multipart.FileHeader, prefix string) ([]response.S3Response, error)
+	DeleteObject(objectKey *string) error
 	GetClient() (*s3.S3, error)
 }
 
 type StorageService interface {
 	Upload(files []*multipart.FileHeader, prefix string) ([]response.S3Response, error)
+	Delete(objectKey string) error
 }
