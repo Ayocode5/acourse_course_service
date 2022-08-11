@@ -10,6 +10,14 @@ type StorageService struct {
 	StorageRepository contracts.StorageRepository
 }
 
+func (s StorageService) UploadFile(file *multipart.FileHeader, prefix string) (response.S3Response, error) {
+	res, err := s.StorageRepository.UploadFile(file, prefix)
+	if err != nil {
+		return response.S3Response{}, err
+	}
+	return res, nil
+}
+
 func (s StorageService) Delete(objectKey string) error {
 	err := s.StorageRepository.DeleteObject(&objectKey)
 	if err != nil {
@@ -18,9 +26,9 @@ func (s StorageService) Delete(objectKey string) error {
 	return nil
 }
 
-func (s StorageService) Upload(files []*multipart.FileHeader, prefix string) ([]response.S3Response, error) {
+func (s StorageService) UploadFiles(files []*multipart.FileHeader, prefix string) ([]response.S3Response, error) {
 
-	res, err := s.StorageRepository.UploadMultiFile(files, prefix)
+	res, err := s.StorageRepository.UploadFiles(files, prefix)
 	if err != nil {
 		return nil, err
 	}

@@ -32,17 +32,6 @@ type S3BucketService struct {
 	prefix          *string
 }
 
-//type Result struct {
-//	Filename string `json:"filename"`
-//	Success  bool   `json:"success"`
-//	Filepath string `json:"filepath"`
-//	Message  string `json:"message"`
-//}
-//
-//type Form struct {
-//	Files []*multipart.FileHeader `form:"files" binding:"required"`
-//}
-
 func ConstructS3Repository(accessKeyId string, secretAccessKey string, bucketName string, bucketRegion string, allowedMimeType []string, maxPartSize int64, maxRetries int) contracts.StorageRepository {
 	return &S3BucketService{
 		maxPartSize:     maxPartSize,
@@ -102,22 +91,34 @@ func (s S3BucketService) readFileBytes(file *multipart.FileHeader) ([]byte, erro
 
 //Files must be video type
 func (s S3BucketService) validateFilesType(files []*multipart.FileHeader) (bool, error) {
+
 	for _, file := range files {
 		size := file.Size
 		contentType := file.Header.Get("Content-Type")
 
 		if size > s.maxPartSize {
-			return false, errors.New("File too large")
+			return false, errors.New("file too large")
 		}
-
-		//for _, allowedType := range s.allowedMimeType {
-		//	fmt.Println(allowedType, contentType, allowedType == contentType)
-		//}
 
 		if !slices.Contains(s.allowedMimeType, contentType) {
 			return false, errors.New(fmt.Sprintf("File type %v is not supported", file.Filename))
 		}
+	}
 
+	return true, nil
+}
+
+func (s S3BucketService) validateFileType(file *multipart.FileHeader) (bool, error) {
+
+	size := file.Size
+	contentType := file.Header.Get("Content-Type")
+
+	if size > s.maxPartSize {
+		return false, errors.New("file too large")
+	}
+
+	if !slices.Contains(s.allowedMimeType, contentType) {
+		return false, errors.New(fmt.Sprintf("File type %v is not supported", file.Filename))
 	}
 
 	return true, nil
@@ -160,10 +161,10 @@ func (s S3BucketService) uploadPart(S3 *s3.S3, resp *s3.CreateMultipartUploadOut
 				}
 				return nil, err
 			}
-			fmt.Printf("Retrying to upload part #%v\n", partNumber)
+			log.Printf("Retrying to upload part #%v\n", partNumber)
 			try++
 		} else {
-			//fmt.Printf("UploadMultiFile part #%v\n", partNumber)
+			//fmt.Printf("UploadFiles part #%v\n", partNumber)
 			completed := &s3.CompletedPart{
 				ETag:       uploadPartOutput.ETag,
 				PartNumber: aws.Int64(int64(partNumber)),
@@ -178,7 +179,7 @@ func (s S3BucketService) uploadPart(S3 *s3.S3, resp *s3.CreateMultipartUploadOut
 
 //Abort multipart If one of the upload part process failed
 func (s S3BucketService) abortMultiPartUpload(S3 *s3.S3, resp *s3.CreateMultipartUploadOutput) error {
-	fmt.Println("Aborting multipart upload for UploadId#" + *resp.UploadId)
+	log.Println("Aborting multipart upload for UploadId#" + *resp.UploadId)
 	abortInput := &s3.AbortMultipartUploadInput{
 		Bucket:   resp.Bucket,
 		Key:      resp.Key,
@@ -188,20 +189,12 @@ func (s S3BucketService) abortMultiPartUpload(S3 *s3.S3, resp *s3.CreateMultipar
 	return err
 }
 
-func (s S3BucketService) UploadMultiFile(files []*multipart.FileHeader, prefix string) ([]response.S3Response, error) {
-
-	//var form Form
-	//_ = c.ShouldBind(&form)
-
+func (s S3BucketService) UploadFile(file *multipart.FileHeader, prefix string) (response.S3Response, error) {
 	//1. Validate Inputs
-	valid, err := s.validateFilesType(files)
-	if !valid {
-		//c.JSON(http.StatusBadRequest, gin.H{
-		//	"message": err.Error(),
-		//	"path":    "s.validateUploadFiles(form.Files)",
-		//})
-		return nil, err
-	}
+	//valid, err := s.validateFileType(file)
+	//if !valid {
+	//	return response.S3Response{}, err
+	//}
 
 	//2. Open AWS S3 Session
 	s3Client, _ := s.GetClient()
@@ -210,8 +203,162 @@ func (s S3BucketService) UploadMultiFile(files []*multipart.FileHeader, prefix s
 	now := time.Now()
 	nowRFC3339 := now.Format(time.RFC3339)
 
-	//List of uploaded file
-	//successPaths := make([]string, len(form.Files))
+	//4. Loop over form input and process each part
+	var wg sync.WaitGroup
+	finalResultChannel := make(chan response.S3Response, 10)
+	pathNumber := 0
+
+	wg.Add(1)
+
+	//5. Get filePart bytes
+	go func(wg *sync.WaitGroup, filePart *multipart.FileHeader, pathNumber int, prefix string) {
+
+		defer wg.Done()
+
+		result := response.S3Response{}
+
+		filebytes, err := s.readFileBytes(filePart)
+		if err != nil {
+			log.Println(err.Error())
+			result.Success = false
+			result.Filename = filePart.Filename
+			result.Message = err.Error()
+			result.Order = pathNumber
+			result.Key = ""
+			finalResultChannel <- result
+			return
+		}
+
+		//6. Filename format
+		path := prefix + nowRFC3339 + "-" + filePart.Filename
+
+		//7. Get filePart type /mime type
+		fileType := http.DetectContentType(filebytes)
+
+		//8. Prepare s3 multipart upload
+		input := &s3.CreateMultipartUploadInput{
+			Bucket:      aws.String(s.bucketName),
+			Key:         aws.String(path),
+			ContentType: aws.String(fileType),
+		}
+
+		//9. Create s3 multipart upload
+		createdMultipartOutput, err := s3Client.CreateMultipartUpload(input)
+		if err != nil {
+			log.Println(err.Error())
+			result.Success = false
+			result.Filename = filePart.Filename
+			result.Order = pathNumber
+			result.Message = err.Error()
+			result.Key = ""
+			finalResultChannel <- result
+			return
+		}
+
+		log.Println("Created multipart upload request")
+
+		//10. UploadFiles Multipart
+		var current, partLength int64
+		var remaining = filePart.Size
+		var completedParts []*s3.CompletedPart
+
+		partNumber := 1
+		for current = 0; remaining != 0; current += partLength {
+			if remaining < s.maxPartSize {
+				partLength = remaining
+			} else {
+				partLength = s.maxPartSize
+			}
+
+			//UploadFiles Binaries File
+			completedPart, err := s.uploadPart(s3Client, createdMultipartOutput, filebytes[current:current+partLength], partNumber)
+
+			if err != nil {
+				log.Println(err.Error())
+
+				err := s.abortMultiPartUpload(s3Client, createdMultipartOutput)
+				if err != nil {
+					log.Println(err.Error())
+					result.Success = false
+					result.Filename = filePart.Filename
+					result.Order = pathNumber
+					result.Message = err.Error()
+					result.Key = ""
+					finalResultChannel <- result
+
+					return
+				}
+
+				result.Success = false
+				result.Filename = filePart.Filename
+				result.Order = pathNumber
+				result.Message = err.Error()
+				result.Key = ""
+				finalResultChannel <- result
+
+				return
+			}
+
+			remaining -= partLength
+			partNumber++
+			completedParts = append(completedParts, completedPart)
+
+		}
+
+		log.Printf("Uploading file: %s\n", filePart.Filename)
+
+		completeResponse, err := s.completeMultipartUpload(s3Client, createdMultipartOutput, completedParts)
+
+		if err != nil {
+			log.Println(err.Error())
+			result.Success = false
+			result.Filename = filePart.Filename
+			result.Order = pathNumber
+			result.Message = err.Error()
+			result.Key = ""
+			finalResultChannel <- result
+			return
+		}
+
+		log.Printf("File successfully uploaded : %s\n", filePart.Filename)
+
+		//Array of uploaded part's url location
+		result.Success = true
+		result.Filename = filePart.Filename
+		result.Filepath = *completeResponse.Location
+		result.Order = pathNumber
+		result.Key = *completeResponse.Key
+		result.Message = fmt.Sprintf("File %v successfully uploaded", filePart.Filename)
+		finalResultChannel <- result
+
+	}(&wg, file, pathNumber, prefix)
+
+	pathNumber++
+
+	wg.Wait()
+
+	//Close Channel
+	close(finalResultChannel)
+
+	//Loop Over Channel
+
+	return <-finalResultChannel, nil
+}
+
+func (s S3BucketService) UploadFiles(files []*multipart.FileHeader, prefix string) ([]response.S3Response, error) {
+
+	//1. Validate Inputs
+	//valid, err := s.validateFilesType(files)
+	//if !valid {
+	//	return nil, err
+	//}
+
+	//2. Open AWS S3 Session
+	s3Client, _ := s.GetClient()
+
+	//3.
+	now := time.Now()
+	nowRFC3339 := now.Format(time.RFC3339)
 
 	//4. Loop over form input and process each part
 	var wg sync.WaitGroup
@@ -227,20 +374,11 @@ func (s S3BucketService) UploadMultiFile(files []*multipart.FileHeader, prefix s
 
 			defer wg.Done()
 
-			result := response.S3Response{
-				Filename: "",
-				Success:  false,
-				Filepath: "",
-				Message:  "",
-			}
+			result := response.S3Response{}
 
 			filebytes, err := s.readFileBytes(filePart)
 			if err != nil {
-				//c.JSON(http.StatusInternalServerError, gin.H{
-				//	"message": "Failed read filePart",
-				//	"path":    "s.readFileBytes(filePart)",
-				//})
-
+				log.Println(err.Error())
 				result.Success = false
 				result.Filename = filePart.Filename
 				result.Message = err.Error()
@@ -266,12 +404,7 @@ func (s S3BucketService) UploadMultiFile(files []*multipart.FileHeader, prefix s
 			//9. Create s3 multipart upload
 			createdMultipartOutput, err := s3Client.CreateMultipartUpload(input)
 			if err != nil {
-				fmt.Println(err.Error())
-				// Response to client
-				//c.JSON(http.StatusInternalServerError, gin.H{
-				//	"message": "Failed CreateMultipartUpload",
-				//	"path":    "s3Client.CreateMultipartUpload(input)",
-				//})
+				log.Println(err.Error())
 				result.Success = false
 				result.Filename = filePart.Filename
 				result.Order = pathNumber
@@ -281,9 +414,9 @@ func (s S3BucketService) UploadMultiFile(files []*multipart.FileHeader, prefix s
 				return
 			}
 
-			fmt.Println("Created multipart upload request")
+			log.Println("Created multipart upload request")
 
-			//10. UploadMultiFile Multipart
+			//10. UploadFiles Multipart
 			var current, partLength int64
 			var remaining = filePart.Size
 			var completedParts []*s3.CompletedPart
@@ -297,15 +430,15 @@ func (s S3BucketService) UploadMultiFile(files []*multipart.FileHeader, prefix s
 					partLength = s.maxPartSize
 				}
 
-				//UploadMultiFile Binaries File
+				//UploadFiles Binaries File
 				completedPart, err := s.uploadPart(s3Client, createdMultipartOutput, filebytes[current:current+partLength], partNumber)
 
 				if err != nil {
-					fmt.Println(err.Error())
+					log.Println(err.Error())
 
 					err := s.abortMultiPartUpload(s3Client, createdMultipartOutput)
 					if err != nil {
-						fmt.Println(err.Error())
+						log.Println(err.Error())
 						result.Success = false
 						result.Filename = filePart.Filename
 						result.Order = pathNumber
@@ -332,12 +465,12 @@ func (s S3BucketService) UploadMultiFile(files []*multipart.FileHeader, prefix s
 
 			}
 
-			fmt.Printf("Uploading file: %s\n", filePart.Filename)
+			log.Printf("Uploading file: %s\n", filePart.Filename)
 
 			completeResponse, err := s.completeMultipartUpload(s3Client, createdMultipartOutput, completedParts)
 
 			if err != nil {
-				fmt.Println(err.Error())
+				log.Println(err.Error())
 				result.Success = false
 				result.Filename = filePart.Filename
 				result.Order = pathNumber
@@ -347,7 +480,7 @@ func (s S3BucketService) UploadMultiFile(files []*multipart.FileHeader, prefix s
 				return
 			}
 
-			fmt.Printf("Successfully uploaded file: %s\n", filePart.Filename)
+			log.Printf("File successfully uploaded : %s\n", filePart.Filename)
 
 			//Array of uploaded part's url location
 			result.Success = true
@@ -355,7 +488,7 @@ func (s S3BucketService) UploadMultiFile(files []*multipart.FileHeader, prefix s
 			result.Filepath = *completeResponse.Location
 			result.Order = pathNumber
 			result.Key = *completeResponse.Key
-			result.Message = fmt.Sprintf("file %v successfully uploaded", filePart.Filename)
+			result.Message = fmt.Sprintf("File %v successfully uploaded", filePart.Filename)
 			finalResultChannel <- result
 
 		}(&wg, filePart, pathNumber, prefix)
@@ -390,7 +523,6 @@ func (s S3BucketService) DeleteObject(objectKey *string) error {
 		Bucket: aws.String(s.bucketName),
 		Key:    objectKey,
 	})
-
 	if err != nil {
 		return err
 	}

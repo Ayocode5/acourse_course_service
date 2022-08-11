@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type DatabaseRepository struct {
@@ -22,10 +23,18 @@ func ConstructDBRepository(conn *mongo.Database, coll *mongo.Collection) contrac
 	}
 }
 
-func (d DatabaseRepository) Fetch(ctx context.Context) (res []models.Course, err error) {
+func (d DatabaseRepository) Fetch(ctx context.Context, excludeFields []string) (res []models.Course, err error) {
 
-	//Fetch Connection
-	records, err := d.Collection.Find(ctx, bson.M{})
+	//Exclude fields
+	excluded := make(map[string]int)
+	for _, field := range excludeFields {
+		excluded[field] = 0
+	}
+
+	opts := options.Find().SetProjection(excluded)
+
+	//Fetch Records
+	records, err := d.Collection.Find(ctx, bson.M{}, opts)
 
 	//Close Cursor
 	defer func(records *mongo.Cursor, ctx context.Context) {
@@ -43,6 +52,7 @@ func (d DatabaseRepository) Fetch(ctx context.Context) (res []models.Course, err
 
 	//Append Each Record to results
 	for records.Next(ctx) {
+
 		var row models.Course
 
 		err := records.Decode(&row)
@@ -56,23 +66,41 @@ func (d DatabaseRepository) Fetch(ctx context.Context) (res []models.Course, err
 	return results, nil
 }
 
-func (d DatabaseRepository) FetchById(ctx context.Context, id string) (res models.Course, err error) {
+func (d DatabaseRepository) FetchById(ctx context.Context, id string, excludeFields []string) (res models.Course, err error) {
+
+	//Exclude fields
+	excluded := make(map[string]int)
+	for _, field := range excludeFields {
+		excluded[field] = 0
+	}
+
+	opts := options.FindOne().SetProjection(excluded)
 
 	var result models.Course
 	objectID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
 		return result, err
 	}
-	err = d.Collection.FindOne(ctx, bson.D{{"_id", objectID}}).Decode(&result)
+	err = d.Collection.FindOne(ctx, bson.D{{"_id", objectID}}, opts).Decode(&result)
 	if err != nil {
 		return result, err
 	}
 	return result, nil
 }
 
-func (d DatabaseRepository) Create(ctx context.Context, data models.Course) (string_id string, err error) {
+func (d DatabaseRepository) FetchByUserId(ctx context.Context, user_id int64) (res models.Course, err error) {
 
-	var course_id string
+	var result models.Course
+	err = d.Collection.FindOne(ctx, bson.D{{"user_id", user_id}}).Decode(&result)
+	if err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func (d DatabaseRepository) Create(ctx context.Context, data models.Course) (string_id primitive.ObjectID, err error) {
+
+	var course_id primitive.ObjectID
 
 	//	Use Transaction
 	err = d.Connection.Client().UseSession(ctx, func(sessionContext mongo.SessionContext) error {
@@ -89,7 +117,7 @@ func (d DatabaseRepository) Create(ctx context.Context, data models.Course) (str
 			return err
 		}
 
-		course_id = insertedData.InsertedID.(primitive.ObjectID).Hex()
+		course_id = insertedData.InsertedID.(primitive.ObjectID)
 
 		// Commit Data if no error
 		err = sessionContext.CommitTransaction(ctx)
@@ -101,7 +129,7 @@ func (d DatabaseRepository) Create(ctx context.Context, data models.Course) (str
 	})
 
 	if err != nil {
-		return "", err
+		return primitive.NilObjectID, err
 	}
 
 	return course_id, nil
@@ -113,10 +141,56 @@ func (d DatabaseRepository) Update(ctx context.Context, data models.Course, id s
 	if err != nil {
 		return false, err
 	}
+
 	filter := bson.D{{"_id", objectId}}
 	_, err = d.Collection.UpdateOne(ctx, filter, bson.D{{"$set", data}})
 	if err != nil {
 		return false, err
 	}
 	return true, err
+}
+
+func (d DatabaseRepository) DeleteCourse(ctx context.Context, course_id string) (res bool, err error) {
+	objectID, err := primitive.ObjectIDFromHex(course_id)
+	if err != nil {
+		return false, err
+	}
+	_, err = d.Collection.DeleteOne(ctx, bson.D{{"_id", objectID}})
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (d DatabaseRepository) DeleteMaterials(ctx context.Context, course_id string, material_id []string) (res interface{}, err error) {
+
+	var material_ids []primitive.ObjectID
+
+	for _, m_id := range material_id {
+		objectID, err := primitive.ObjectIDFromHex(m_id)
+		if err != nil {
+			return false, err
+		}
+		material_ids = append(material_ids, objectID)
+	}
+
+	pull := bson.D{{"$pull", bson.D{{"materials", bson.D{{"material_id", bson.D{{"$in", material_ids}}}}}}}}
+
+	objectID, err := primitive.ObjectIDFromHex(course_id)
+	if err != nil {
+		return false, err
+	}
+
+	filter := bson.D{{"_id", objectID}}
+
+	res, err = d.Collection.UpdateOne(ctx, filter, pull)
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
+func (d DatabaseRepository) GenerateModelID() primitive.ObjectID {
+	return primitive.NewObjectID()
 }
