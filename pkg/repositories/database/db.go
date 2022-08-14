@@ -34,7 +34,8 @@ func (d DatabaseRepository) Fetch(ctx context.Context, excludeFields []string) (
 	opts := options.Find().SetProjection(excluded)
 
 	//Fetch Records
-	records, err := d.Collection.Find(ctx, bson.M{}, opts)
+	filter := map[string]interface{}{"deleted_at": nil}
+	records, err := d.Collection.Find(ctx, filter, opts)
 
 	//Close Cursor
 	defer func(records *mongo.Cursor, ctx context.Context) {
@@ -81,24 +82,39 @@ func (d DatabaseRepository) FetchById(ctx context.Context, id string, excludeFie
 	if err != nil {
 		return result, err
 	}
-	err = d.Collection.FindOne(ctx, bson.D{{"_id", objectID}}, opts).Decode(&result)
+
+	filter := map[string]interface{}{"_id": objectID, "deleted_at": nil}
+	err = d.Collection.FindOne(ctx, filter, opts).Decode(&result)
 	if err != nil {
 		return result, err
 	}
+
 	return result, nil
 }
 
-func (d DatabaseRepository) FetchByUserId(ctx context.Context, user_id int64) (res models.Course, err error) {
+func (d DatabaseRepository) FetchByUserId(ctx context.Context, user_id int64, excludeFields []string) (res *models.Course, err error) {
+
+	//Exclude fields
+	excluded := make(map[string]int)
+	for _, field := range excludeFields {
+		excluded[field] = 0
+	}
+
+	opts := options.FindOne().SetProjection(excluded)
 
 	var result models.Course
-	err = d.Collection.FindOne(ctx, bson.D{{"user_id", user_id}}).Decode(&result)
+
+	filter := map[string]interface{}{"user_id": user_id, "deleted_at": nil}
+
+	err = d.Collection.FindOne(ctx, filter, opts).Decode(&result)
 	if err != nil {
-		return result, err
+		return &result, err
 	}
-	return result, nil
+
+	return &result, nil
 }
 
-func (d DatabaseRepository) Create(ctx context.Context, data models.Course) (string_id primitive.ObjectID, err error) {
+func (d DatabaseRepository) Create(ctx context.Context, data *models.Course) (string_id primitive.ObjectID, err error) {
 
 	var course_id primitive.ObjectID
 

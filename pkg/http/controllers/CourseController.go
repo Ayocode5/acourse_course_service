@@ -78,6 +78,9 @@ func (handler *CourseHanlder) CreateCourse(c *gin.Context) {
 
 func (hanlder CourseHanlder) UpdateCourse(c *gin.Context) {
 
+	val, _ := c.Get("authorization")
+	authContext := context.WithValue(hanlder.Context, "authorization", val)
+
 	//Validate Request
 	var updateCourseRequest requests.UpdateCourseRequest
 
@@ -87,12 +90,12 @@ func (hanlder CourseHanlder) UpdateCourse(c *gin.Context) {
 		return
 	}
 
-	res, err := hanlder.CourseService.Update(hanlder.Context, updateCourseRequest, c.Param("id"))
+	res, err := hanlder.CourseService.Update(authContext, updateCourseRequest, c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "course updated successfuly", "data": res})
+	c.JSON(res.StatusCode, res)
 	return
 }

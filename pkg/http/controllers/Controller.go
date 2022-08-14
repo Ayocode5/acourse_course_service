@@ -13,7 +13,7 @@ func SetupCourseHandler(ctx context.Context, router *gin.Engine, courseService c
 
 	r := router.Group("/course/")
 	r.Use(middleware.AuthorizeRequestMiddleware)
-	r.GET("/all", handler.FetchAll)
+	r.GET("/list", handler.FetchAll)
 	r.GET("/show/:id", handler.Find)
 	r.POST("/create", handler.CreateCourse)
 	r.PUT("/update/:id", handler.UpdateCourse)
