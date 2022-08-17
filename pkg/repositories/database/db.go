@@ -8,6 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"sort"
 )
 
 type DatabaseRepository struct {
@@ -23,7 +24,7 @@ func ConstructDBRepository(conn *mongo.Database, coll *mongo.Collection) contrac
 	}
 }
 
-func (d DatabaseRepository) Fetch(ctx context.Context, excludeFields []string) (res []models.Course, err error) {
+func (d DatabaseRepository) Fetch(ctx context.Context, excludeFields []string, limit int64, skip int64) (res []models.Course, err error) {
 
 	//Exclude fields
 	excluded := make(map[string]int)
@@ -31,7 +32,31 @@ func (d DatabaseRepository) Fetch(ctx context.Context, excludeFields []string) (
 		excluded[field] = 0
 	}
 
-	opts := options.Find().SetProjection(excluded)
+	opts := options.Find()
+	opts.SetProjection(excluded)
+	opts.SetLimit(limit)
+	opts.SetSkip(skip)
+
+	//orderedMaterial, err := d.Collection.Aggregate(ctx, mongo.Pipeline{
+	//	bson.D{{"$unwind", "$materials"}},
+	//	bson.D{{"$sort", bson.D{{"materials.order", -1}}}},
+	//	bson.D{{"$group", bson.D{
+	//		{"_id", "$_id"},
+	//		{"materials", bson.D{{"$push", "$materials"}}}}}},
+	//})
+	//if err != nil {
+	//	return nil, err
+	//}
+	//
+	//for orderedMaterial.Next(ctx) {
+	//	var row models.Course
+	//
+	//	err := orderedMaterial.Decode(&row)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	log.Println(row.Materials)
+	//}
 
 	//Fetch Records
 	filter := map[string]interface{}{"deleted_at": nil}
@@ -54,14 +79,18 @@ func (d DatabaseRepository) Fetch(ctx context.Context, excludeFields []string) (
 	//Append Each Record to results
 	for records.Next(ctx) {
 
-		var row models.Course
+		var course models.Course
 
-		err := records.Decode(&row)
+		err := records.Decode(&course)
 		if err != nil {
 			return nil, err
 		}
 
-		results = append(results, row)
+		sort.SliceStable(course.Materials, func(i, j int) bool {
+			return course.Materials[i].Order < course.Materials[j].Order
+		})
+
+		results = append(results, course)
 	}
 
 	return results, nil
@@ -77,19 +106,23 @@ func (d DatabaseRepository) FetchById(ctx context.Context, id string, excludeFie
 
 	opts := options.FindOne().SetProjection(excluded)
 
-	var result models.Course
+	var course models.Course
 	objectID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return result, err
+		return course, err
 	}
 
 	filter := map[string]interface{}{"_id": objectID, "deleted_at": nil}
-	err = d.Collection.FindOne(ctx, filter, opts).Decode(&result)
+	err = d.Collection.FindOne(ctx, filter, opts).Decode(&course)
 	if err != nil {
-		return result, err
+		return course, err
 	}
 
-	return result, nil
+	sort.SliceStable(course.Materials, func(i, j int) bool {
+		return course.Materials[i].Order < course.Materials[j].Order
+	})
+
+	return course, nil
 }
 
 func (d DatabaseRepository) FetchByUserId(ctx context.Context, user_id int64, excludeFields []string) (res *models.Course, err error) {

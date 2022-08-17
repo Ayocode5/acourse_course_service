@@ -38,6 +38,15 @@ type Material struct {
 	DeletedAt   *time.Time         `json:"deleted_at,omitempty" bson:"deleted_at"`
 }
 
+type Pagination struct {
+	Page    int64
+	PerPage int64
+}
+
+func (p Pagination) GetPagination() (limit int64, skip int64) {
+	return p.PerPage, (p.Page - 1) * p.PerPage
+}
+
 func (c *Course) AddTotalDuration(duration time.Duration) {
 	c.Lock()
 	c.TotalDuration += duration

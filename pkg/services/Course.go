@@ -23,10 +23,7 @@ type CourseService struct {
 	MediaInfoService contracts.MediaInfoService
 }
 
-func ConstructCourseService(
-	dbRepository *contracts.CourseDatabaseRepository,
-	storageService *contracts.StorageService,
-	mediaInfoService *contracts.MediaInfoService) contracts.CourseService {
+func ConstructCourseService(dbRepository *contracts.CourseDatabaseRepository, storageService *contracts.StorageService, mediaInfoService *contracts.MediaInfoService) contracts.CourseService {
 
 	return &CourseService{
 		DBRepository:     *dbRepository,
@@ -48,8 +45,10 @@ func (c CourseService) AuthorizeResourceByUserId(model *models.Course, auth midd
 	return true, nil
 }
 
-func (c CourseService) Fetch(ctx context.Context, excludeFields []string) ([]models.Course, error) {
-	return c.DBRepository.Fetch(ctx, excludeFields)
+func (c CourseService) Fetch(ctx context.Context, excludeFields []string, pagination models.Pagination) ([]models.Course, error) {
+
+	limit, skip := pagination.GetPagination()
+	return c.DBRepository.Fetch(ctx, excludeFields, limit, skip)
 }
 
 func (c CourseService) FetchById(ctx context.Context, id string, excludeFields []string) (models.Course, error) {
@@ -64,7 +63,7 @@ func (c CourseService) Create(ctx context.Context, request requests.CreateCourse
 		return nil, validationErr
 	}
 
-	//Check if user id is not duplcate
+	//Check if user id is not duplicate
 	res, _ := c.DBRepository.FetchByUserId(ctx, request.UserID, []string{})
 	if res.UserID == request.UserID {
 		return nil, errors.New("duplicated user id")
@@ -108,7 +107,7 @@ func (c CourseService) Create(ctx context.Context, request requests.CreateCourse
 	course.ImageUrl = c.replaceVideoUrl(uploadedCourseThumbnail.Filepath)
 
 	//4. Construct Course Materials
-	total_duration := 0
+	totalDuration := 0
 
 	for i := 0; i < len(request.Materials); i++ {
 
@@ -137,10 +136,10 @@ func (c CourseService) Create(ctx context.Context, request requests.CreateCourse
 			DeletedAt:   nil,
 		})
 
-		total_duration += duration
+		totalDuration += duration
 	}
 
-	course.TotalDuration = time.Duration(total_duration)
+	course.TotalDuration = time.Duration(totalDuration)
 
 	//5. Save Course Model to Database
 	courseId, err := c.DBRepository.Create(ctx, &course)
@@ -330,7 +329,7 @@ func (c CourseService) Update(ctx context.Context, request requests.UpdateCourse
 	}, nil
 }
 
-func (c CourseService) DeleteMaterials(ctx context.Context, course_id string, materialIds []string) (*response.HttpResponse, error) {
+func (c CourseService) DeleteMaterials(ctx context.Context, course_id string, data requests.DeleteMaterialsRequest) (*response.HttpResponse, error) {
 
 	authorization := ctx.Value("authorization").(*middleware.Authorization)
 
@@ -357,16 +356,16 @@ func (c CourseService) DeleteMaterials(ctx context.Context, course_id string, ma
 		}, nil
 	}
 
-	for _, m_id := range materialIds {
+	for _, m_id := range data.MaterialID {
 
-		foundMaterial := func(course models.Course, targetID string) *models.Material {
+		foundMaterial := func(course *models.Course, targetID string) *models.Material {
 			for _, material := range course.Materials {
 				if material.MaterialID.Hex() == targetID {
 					return &material
 				}
 			}
 			return nil
-		}(course, m_id)
+		}(&course, m_id)
 
 		if foundMaterial != nil {
 			_ = c.StorageService.Delete(foundMaterial.Key)
@@ -387,7 +386,7 @@ func (c CourseService) DeleteMaterials(ctx context.Context, course_id string, ma
 		}, err
 	}
 
-	_, err = c.DBRepository.DeleteMaterials(ctx, course_id, materialIds)
+	_, err = c.DBRepository.DeleteMaterials(ctx, course_id, data.MaterialID)
 	if err != nil {
 		return &response.HttpResponse{
 			StatusCode: http.StatusInternalServerError,

@@ -3,10 +3,13 @@ package controllers
 import (
 	"acourse-course-service/pkg/contracts"
 	"acourse-course-service/pkg/http/requests"
+	"acourse-course-service/pkg/http/response"
+	"acourse-course-service/pkg/models"
 	"context"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -22,12 +25,34 @@ func (hanlder *CourseHanlder) FetchAll(c *gin.Context) {
 		excludedField = strings.Split(c.Query("exclude"), ",")
 	}
 
-	courses, err := hanlder.CourseService.Fetch(hanlder.Context, excludedField)
+	page, ok := c.GetQuery("page")
+	if page == "" || !ok {
+		page = "1"
+	}
+
+	q_page, err2 := strconv.ParseInt(page, 10, 64)
+	if err2 != nil {
+		return
+	}
+
+	pagination := models.Pagination{
+		Page:    q_page,
+		PerPage: 25,
+	}
+
+	courses, err := hanlder.CourseService.Fetch(hanlder.Context, excludedField, pagination)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, courses)
+	c.JSON(http.StatusOK, response.HttpPaginationResponse{
+		HttpResponse: response.HttpResponse{
+			Data:       courses,
+			StatusCode: 200,
+		},
+		PerPage: pagination.PerPage,
+		Page:    pagination.Page,
+	})
 }
 
 func (handler *CourseHanlder) Find(c *gin.Context) {
@@ -98,4 +123,12 @@ func (hanlder CourseHanlder) UpdateCourse(c *gin.Context) {
 
 	c.JSON(res.StatusCode, res)
 	return
+}
+
+func (hanlder CourseHanlder) DeleteCourse(c *gin.Context) {
+
+}
+
+func (hanlder CourseHanlder) DeleteMaterial(c *gin.Context) {
+
 }
