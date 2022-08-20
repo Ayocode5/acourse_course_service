@@ -97,7 +97,7 @@ func (s S3BucketService) validateFilesType(files []*multipart.FileHeader) (bool,
 		contentType := file.Header.Get("Content-Type")
 
 		if size > s.maxPartSize {
-			return false, errors.New("file too large")
+			return false, errors.New(fmt.Sprintf("File too large, maximum file size is %v MB", s.maxPartSize/(1024*1024)))
 		}
 
 		if !slices.Contains(s.allowedMimeType, contentType) {
@@ -114,7 +114,7 @@ func (s S3BucketService) validateFileType(file *multipart.FileHeader) (bool, err
 	contentType := file.Header.Get("Content-Type")
 
 	if size > s.maxPartSize {
-		return false, errors.New("file too large")
+		return false, errors.New(fmt.Sprintf("File too large, maximum file size is %v MB", s.maxPartSize/(1024*1024)))
 	}
 
 	if !slices.Contains(s.allowedMimeType, contentType) {

@@ -61,5 +61,5 @@ func (r UpdateCourseRequest) ValidateMaterialFiles() error {
 }
 
 type DeleteMaterialsRequest struct {
-	MaterialID []string `form:"material_id" json:"material_id" binding:"required"`
+	MaterialIDs []string `form:"material_id" json:"material_id" binding:"required"`
 }

@@ -31,5 +31,5 @@ type CourseDatabaseRepository interface {
 }
 
 type CourseResourcePolicy interface {
-	AuthorizeResourceByUserId(model *models.Course, authorization middleware.Authorization) (bool, error)
+	AuthorizeResourceOwner(model *models.Course, authorization middleware.Authorization) (bool, error)
 }

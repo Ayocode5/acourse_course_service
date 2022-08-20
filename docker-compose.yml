@@ -2,6 +2,19 @@ version: "3"
 
 services:
 
+  db:
+    container_name: acourse_course_service_db
+    image: mongo
+    environment:
+      - MONGO_INITDB_DATABASE=${DB_NAME}
+      - MONGO_INITDB_ROOT_USERNAME=${DB_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - ./pkg/database/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - db_vol:/data/db
+    ports:
+      - 27017:${DB_PORT}
+
   app:
     container_name: acourse_course_service_app
     build:
@@ -11,12 +24,15 @@ services:
       - 8082:${APP_PORT}
     restart: on-failure
     volumes:
-      - app_acourse_course_service_vol
+      - app_vol:/app
     networks:
       - default
+    depends_on:
+      - db
 
 volumes:
-  app_acourse_course_service_vol:
+  app_vol:
+  db_vol:
 
 networks:
   default:

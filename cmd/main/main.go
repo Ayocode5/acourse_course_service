@@ -2,6 +2,7 @@ package main
 
 import (
 	"acourse-course-service/pkg/database"
+	migrations "acourse-course-service/pkg/database/migration"
 	"acourse-course-service/pkg/http/controllers"
 	dbrepo "acourse-course-service/pkg/repositories/database"
 	s3repo "acourse-course-service/pkg/repositories/storage"
@@ -33,9 +34,15 @@ func main() {
 		DbCollection: os.Getenv("DB_COLLECTION"),
 		DbHost:       os.Getenv("DB_HOST"),
 		DbPort:       os.Getenv("DB_PORT"),
+		DbUsername:   os.Getenv("DB_USERNAME"),
+		DBPassword:   os.Getenv("DB_PASSWORD"),
 	}
 	//Open Connection
 	mongodb := db.Prepare()
+
+	//Migrations
+	migration := migrations.ConstructMigration(&db)
+	migration.MigrateSettings()
 
 	//Setup MongoDB Repository
 	dbRepository := dbrepo.ConstructDBRepository(mongodb.GetConnection(), mongodb.GetCollection())

@@ -7,7 +7,7 @@ import (
 	"acourse-course-service/pkg/http/response"
 	"acourse-course-service/pkg/models"
 	"context"
-	"errors"
+	"fmt"
 	"log"
 	"mime/multipart"
 	"net/http"
@@ -32,7 +32,7 @@ func ConstructCourseService(dbRepository *contracts.CourseDatabaseRepository, st
 	}
 }
 
-func (c CourseService) AuthorizeResourceByUserId(model *models.Course, auth middleware.Authorization) (bool, error) {
+func (c CourseService) AuthorizeResourceOwner(model *models.Course, auth middleware.Authorization) (bool, error) {
 
 	userId, err := strconv.ParseInt(auth.UserID, 10, 64)
 	if err != nil {
@@ -40,6 +40,7 @@ func (c CourseService) AuthorizeResourceByUserId(model *models.Course, auth midd
 	}
 
 	if model.UserID != userId {
+		//log.Println(model.UserID, userId)
 		return false, nil
 	}
 	return true, nil
@@ -64,10 +65,10 @@ func (c CourseService) Create(ctx context.Context, request requests.CreateCourse
 	}
 
 	//Check if user id is not duplicate
-	res, _ := c.DBRepository.FetchByUserId(ctx, request.UserID, []string{})
-	if res.UserID == request.UserID {
-		return nil, errors.New("duplicated user id")
-	}
+	//res, _ := c.DBRepository.FetchByUserId(ctx, request.UserID, []string{})
+	//if res.UserID == request.UserID {
+	//	return nil, errors.New("duplicated user id")
+	//}
 
 	//1. Construct Course Model
 	var course models.Course
@@ -168,7 +169,7 @@ func (c CourseService) Update(ctx context.Context, request requests.UpdateCourse
 	}
 
 	//Authorize User to check the rights to do manipulation
-	validated, err := c.AuthorizeResourceByUserId(&course, *authorization)
+	validated, err := c.AuthorizeResourceOwner(&course, *authorization)
 	if err != nil {
 		return &response.HttpResponse{
 			StatusCode: http.StatusInternalServerError,
@@ -223,7 +224,7 @@ func (c CourseService) Update(ctx context.Context, request requests.UpdateCourse
 			//If Material Exists Update the Material, Otherwise Add New one
 			if existingMaterial != nil {
 
-				log.Println("updating existing material")
+				log.Println(fmt.Sprintf("updating existing material >> %v", existingMaterial.MaterialID))
 				//Reset Material Ordering
 				materialOrder := data.Materials[i].Order
 				if data.Materials[i].NewOrder != nil {
@@ -249,10 +250,12 @@ func (c CourseService) Update(ctx context.Context, request requests.UpdateCourse
 					}
 
 					//Delete Old Video
-					err = c.StorageService.Delete(existingMaterial.Key)
-					if err != nil {
-						log.Fatal(err.Error())
-						//return false, err
+					if existingMaterial.Key != "" {
+						err = c.StorageService.Delete(existingMaterial.Key)
+						if err != nil {
+							log.Fatal(err.Error())
+							//return false, err
+						}
 					}
 
 					//Decrease Course Total Duration by Material Duration
@@ -341,7 +344,7 @@ func (c CourseService) DeleteMaterials(ctx context.Context, course_id string, da
 		}, err
 	}
 
-	validated, err := c.AuthorizeResourceByUserId(&course, *authorization)
+	validated, err := c.AuthorizeResourceOwner(&course, *authorization)
 	if err != nil {
 		return &response.HttpResponse{
 			StatusCode: http.StatusInternalServerError,
@@ -352,11 +355,11 @@ func (c CourseService) DeleteMaterials(ctx context.Context, course_id string, da
 	if !validated {
 		return &response.HttpResponse{
 			StatusCode: http.StatusUnauthorized,
-			Message:    "You don't have any permission to edit this resources",
+			Message:    "You don't have any permission to remove this resources",
 		}, nil
 	}
 
-	for _, m_id := range data.MaterialID {
+	for _, materialId := range data.MaterialIDs {
 
 		foundMaterial := func(course *models.Course, targetID string) *models.Material {
 			for _, material := range course.Materials {
@@ -365,18 +368,21 @@ func (c CourseService) DeleteMaterials(ctx context.Context, course_id string, da
 				}
 			}
 			return nil
-		}(&course, m_id)
+		}(&course, materialId)
 
 		if foundMaterial != nil {
-			_ = c.StorageService.Delete(foundMaterial.Key)
-			//if err != nil {
-			//	return false, err
-			//}
+			err = c.StorageService.Delete(foundMaterial.Key)
+			if err != nil {
+				log.Println(err.Error())
+			}
 
 			//Decrease Duration
 			course.SubTotalDuration(foundMaterial.Duration)
 		}
 	}
+
+	timeNow := time.Now()
+	course.UpdatedAt = &timeNow
 
 	_, err = c.DBRepository.Update(ctx, course, course_id)
 	if err != nil {
@@ -386,7 +392,7 @@ func (c CourseService) DeleteMaterials(ctx context.Context, course_id string, da
 		}, err
 	}
 
-	_, err = c.DBRepository.DeleteMaterials(ctx, course_id, data.MaterialID)
+	_, err = c.DBRepository.DeleteMaterials(ctx, course_id, data.MaterialIDs)
 	if err != nil {
 		return &response.HttpResponse{
 			StatusCode: http.StatusInternalServerError,
@@ -406,7 +412,7 @@ func (c CourseService) DeleteCourse(ctx context.Context, course_id string) (*res
 
 	//1. Fetch Course
 	course, err := c.DBRepository.FetchById(ctx, course_id, []string{
-		"name", "image", "price", "description", "created_at", "updated_at", "is_released", "course_id", "total_duration", "user_id"})
+		"name", "image", "price", "description", "created_at", "updated_at", "is_released", "course_id", "total_duration"})
 	if err != nil {
 		return &response.HttpResponse{
 			StatusCode: http.StatusInternalServerError,
@@ -414,7 +420,7 @@ func (c CourseService) DeleteCourse(ctx context.Context, course_id string) (*res
 		}, err
 	}
 
-	validated, err := c.AuthorizeResourceByUserId(&course, *authorization)
+	validated, err := c.AuthorizeResourceOwner(&course, *authorization)
 	if err != nil {
 		return &response.HttpResponse{
 			StatusCode: http.StatusInternalServerError,

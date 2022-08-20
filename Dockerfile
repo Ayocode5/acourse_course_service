@@ -3,9 +3,7 @@ FROM golang:alpine as builder
 
 # ENV GO111MODULE=on
 
-# Install git.
-# Git is required for fetching the dependencies.
-RUN apk update && apk add --no-cache git
+RUN apk update && apk add --no-cache git && apk add build-base && apk add libmediainfo-dev
 
 # Set the current working directory inside the container
 WORKDIR /app
@@ -20,12 +18,14 @@ RUN go mod download && go mod verify
 COPY . .
 
 # Build the Go app
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo cmd/main/main.go
+#RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo cmd/main/main.go
+RUN GOOS=linux go build cmd/main/main.go
 
 # Start a new stage from scratch
 FROM alpine:latest
 
 RUN apk --no-cache add ca-certificates
+RUN apk add libmediainfo
 
 WORKDIR /root/
 
@@ -37,5 +37,5 @@ COPY --from=builder /app/main .
 COPY --from=builder /app/.env .
 
 #Command to run the executable
-CMD ["./wait"]
-#CMD ["./main"]
+#CMD ["./wait"]
+CMD ["./main"]

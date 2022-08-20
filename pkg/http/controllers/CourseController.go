@@ -127,8 +127,42 @@ func (hanlder CourseHanlder) UpdateCourse(c *gin.Context) {
 
 func (hanlder CourseHanlder) DeleteCourse(c *gin.Context) {
 
+	val, _ := c.Get("authorization")
+	authContext := context.WithValue(hanlder.Context, "authorization", val)
+
+	res, err := hanlder.CourseService.DeleteCourse(authContext, c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(res.StatusCode, res)
+	return
 }
 
 func (hanlder CourseHanlder) DeleteMaterial(c *gin.Context) {
+
+	val, _ := c.Get("authorization")
+	authContext := context.WithValue(hanlder.Context, "authorization", val)
+
+	//Validate Request
+	var deleteMaterialRequest requests.DeleteMaterialsRequest
+
+	err := c.ShouldBind(&deleteMaterialRequest)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	//log.Println(val)
+
+	res, err := hanlder.CourseService.DeleteMaterials(authContext, c.Param("id"), deleteMaterialRequest)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(res.StatusCode, res)
+	return
 
 }

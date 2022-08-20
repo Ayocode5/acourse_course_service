@@ -17,7 +17,7 @@ func SetupCourseHandler(ctx context.Context, router *gin.Engine, courseService c
 	r.GET("/show/:id", handler.Find)
 	r.POST("/create", middleware.CanCreateCourseMiddleware, handler.CreateCourse)
 	r.PUT("/update/:id", middleware.CanUpdateCourseMiddleware, handler.UpdateCourse)
-	r.DELETE("/delete-material/:id", middleware.CanDeleteCourseMiddleware, handler.DeleteMaterial)
+	r.DELETE("/delete-course/:id/material", middleware.CanDeleteCourseMiddleware, handler.DeleteMaterial)
 	r.DELETE("/delete-course/:id", middleware.CanDeleteCourseMiddleware, handler.DeleteCourse)
 
 }

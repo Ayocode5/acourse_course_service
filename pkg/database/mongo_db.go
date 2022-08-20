@@ -10,6 +10,8 @@ import (
 )
 
 type Database struct {
+	DbUsername   string
+	DBPassword   string
 	DbName       string
 	DbHost       string
 	DbPort       string
@@ -27,13 +29,13 @@ func (db *Database) Prepare() contracts.MongoDBContract {
 		client, err := mongo.NewClient(clientOptions)
 
 		if err != nil {
-			log.Fatal(err)
+			panic(err.Error())
 		}
 
 		err = client.Connect(context.Background())
 
 		if err != nil {
-			log.Fatal(err)
+			panic(err.Error())
 		}
 
 		log.Println("PINGING: MongoDB")
@@ -61,5 +63,5 @@ func (db *Database) GetCollection() *mongo.Collection {
 }
 
 func (db *Database) Dsn() string {
-	return fmt.Sprintf("mongodb://%s:%s/?compressors=disabled&gssapiServiceName=mongodb", db.DbHost, db.DbPort)
+	return fmt.Sprintf("mongodb://%s:%s@%s:%s/%s?authSource=admin", db.DbUsername, db.DBPassword, db.DbHost, db.DbPort, db.DbName)
 }
